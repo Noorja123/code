@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bell, Plus, CheckCircle, AlertCircle } from 'lucide-react';
+import { Badge } from "@/components/ui/badge";
+import { Bell, Plus, CheckCircle, AlertCircle, Megaphone, Building2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface Announcement {
@@ -18,6 +19,9 @@ interface Announcement {
   content: string;
   created_at: string;
   creator_name: string;
+  visibility: string;
+  department_id: string | null;
+  department_name?: string;
 }
 
 export default function AnnouncementsPage() {
@@ -45,16 +49,37 @@ export default function AnnouncementsPage() {
 
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("*")
+          .select("*, departments(name)") // Fetch department name too
           .eq("id", user.id)
           .single();
 
         setProfile(profileData);
 
-        const { data: announcementData } = await supabase
+        // FETCH ANNOUNCEMENTS
+        let query = supabase
           .from("announcements")
-          .select(`*, profiles!created_by(first_name, last_name)`)
+          .select(`
+            *, 
+            profiles!created_by(first_name, last_name, role),
+            departments(name)
+          `)
           .order("created_at", { ascending: false });
+
+        // Admins/Super Admins see everything
+        if (profileData.role === 'admin' || profileData.role === 'super_admin') {
+          // No filter needed
+        } else {
+          // HODs and Employees see: Global ('all') OR Their Department
+          // We use .or() syntax: "visibility.eq.all,department_id.eq.XYZ"
+          const deptFilter = profileData.department_id 
+            ? `,department_id.eq.${profileData.department_id}` 
+            : '';
+          query = query.or(`visibility.eq.all${deptFilter}`);
+        }
+
+        const { data: announcementData, error: fetchError } = await query;
+        
+        if (fetchError) throw fetchError;
 
         const formattedAnnouncements = (announcementData || []).map(
           (ann: any) => ({
@@ -62,12 +87,16 @@ export default function AnnouncementsPage() {
             title: ann.title,
             content: ann.content,
             created_at: ann.created_at,
+            visibility: ann.visibility,
+            department_id: ann.department_id,
+            department_name: ann.departments?.name,
             creator_name: `${ann.profiles?.first_name} ${ann.profiles?.last_name}`,
           })
         );
 
         setAnnouncements(formattedAnnouncements);
       } catch (err) {
+        console.error(err);
         setError("Failed to load announcements");
       } finally {
         setLoading(false);
@@ -91,13 +120,26 @@ export default function AnnouncementsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // LOGIC: 
+      // If HOD -> visibility = 'department', department_id = profile.department_id
+      // If Admin -> visibility = 'all' (Global)
+      
+      const isHod = profile.role === 'hod';
+      const visibility = isHod ? 'department' : 'all';
+      const departmentId = isHod ? profile.department_id : null;
+
+      if (isHod && !departmentId) {
+        throw new Error("You are not assigned to a department, so you cannot post.");
+      }
+
       const { error: insertError } = await supabase
         .from("announcements")
         .insert({
           created_by: user.id,
           title: formData.title,
           content: formData.content,
-          visibility: "all",
+          visibility: visibility,
+          department_id: departmentId
         });
 
       if (insertError) throw insertError;
@@ -106,26 +148,17 @@ export default function AnnouncementsPage() {
       setFormData({ title: "", content: "" });
       setShowForm(false);
 
-      const { data: updatedAnnouncements } = await supabase
-        .from("announcements")
-        .select(`*, profiles!created_by(first_name, last_name)`)
-        .order("created_at", { ascending: false });
+      // Refresh list instantly by adding new item (simplified) or re-fetching
+      // Ideally re-fetch to get proper timestamps/names, but for speed we reload window or fetch again
+      window.location.reload(); 
 
-      const formattedAnnouncements = (updatedAnnouncements || []).map(
-        (ann: any) => ({
-          id: ann.id,
-          title: ann.title,
-          content: ann.content,
-          created_at: ann.created_at,
-          creator_name: `${ann.profiles?.first_name} ${ann.profiles?.last_name}`,
-        })
-      );
-
-      setAnnouncements(formattedAnnouncements);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to post announcement");
     }
   };
+
+  // Check if user is allowed to post
+  const canPost = ['admin', 'super_admin', 'hod'].includes(profile?.role);
 
   if (loading) {
     return (
@@ -148,13 +181,13 @@ export default function AnnouncementsPage() {
             <div>
               <h1 className="text-3xl font-bold">Announcements</h1>
               <p className="text-muted-foreground mt-2">
-                Stay updated with company announcements
+                Stay updated with company news
               </p>
             </div>
-            {profile?.role === "admin" && (
+            {canPost && (
               <Button onClick={() => setShowForm(!showForm)}>
                 <Plus size={16} className="mr-2" />
-                Post Announcement
+                {profile.role === 'hod' ? 'Post to My Department' : 'Post Announcement'}
               </Button>
             )}
           </div>
@@ -175,10 +208,12 @@ export default function AnnouncementsPage() {
             </Alert>
           )}
 
-          {showForm && profile?.role === "admin" && (
-            <Card className="mb-8">
+          {showForm && canPost && (
+            <Card className="mb-8 border-2 border-primary/10">
               <CardHeader>
-                <CardTitle>Post New Announcement</CardTitle>
+                <CardTitle>
+                  New {profile.role === 'hod' ? 'Department' : 'Company'} Announcement
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -236,14 +271,26 @@ export default function AnnouncementsPage() {
               announcements.map((announcement) => (
                 <Card key={announcement.id}>
                   <CardContent className="pt-6">
-                    <h3 className="text-lg font-semibold mb-2">
-                      {announcement.title}
-                    </h3>
-                    <p className="text-muted-foreground text-sm mb-3">
-                      By {announcement.creator_name} •{" "}
-                      {new Date(announcement.created_at).toLocaleDateString()}
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-lg font-semibold">
+                        {announcement.title}
+                      </h3>
+                      {announcement.visibility === 'all' ? (
+                        <Badge variant="secondary" className="flex items-center gap-1">
+                          <Megaphone size={12} /> Company Wide
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="flex items-center gap-1 border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
+                          <Building2 size={12} /> {announcement.department_name || "Department"}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <p className="text-muted-foreground text-sm mb-4 border-b pb-2">
+                      Posted by <span className="font-medium text-foreground">{announcement.creator_name}</span> on {new Date(announcement.created_at).toLocaleDateString()}
                     </p>
-                    <p className="text-foreground whitespace-pre-wrap">
+                    
+                    <p className="text-foreground whitespace-pre-wrap leading-relaxed">
                       {announcement.content}
                     </p>
                   </CardContent>
