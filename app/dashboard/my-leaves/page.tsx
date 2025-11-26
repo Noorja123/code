@@ -35,12 +35,15 @@ export default function MyLeavesPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  
+  // ✅ Default matches the exact spelling/case of the new options
   const [formData, setFormData] = useState({
-    leave_type: "casual",
+    leave_type: "Casual", 
     start_date: "",
     end_date: "",
     reason: "",
   });
+  
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const router = useRouter();
@@ -89,9 +92,6 @@ export default function MyLeavesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. NEW LOGIC: Check role to determine initial status
-      // If HOD, set to 'hod_approved' so it goes straight to Admin
-      // If Employee, set to 'pending' for HOD review
       const initialStatus = profile.role === 'hod' ? 'hod_approved' : 'pending';
 
       const { error: insertError } = await supabase.from("leaves").insert({
@@ -101,14 +101,14 @@ export default function MyLeavesPage() {
         start_date: formData.start_date,
         end_date: formData.end_date,
         reason: formData.reason,
-        status: initialStatus, // Using the dynamic status
+        status: initialStatus,
       });
 
       if (insertError) throw insertError;
 
       setSuccess("Leave request submitted successfully!");
       setFormData({
-        leave_type: "casual",
+        leave_type: "Casual",
         start_date: "",
         end_date: "",
         reason: "",
@@ -141,7 +141,6 @@ export default function MyLeavesPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen bg-background">
-        {/* Pass loading state or default role to avoid layout shift */}
         <SidebarNav role={profile?.role || "employee"} />
         <main className="flex-1 md:ml-64 p-8">
           <p className="text-muted-foreground">Loading...</p>
@@ -152,7 +151,6 @@ export default function MyLeavesPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* 2. FIXED: Pass the actual profile role, not hardcoded 'employee' */}
       <SidebarNav role={profile?.role} userName={`${profile?.first_name} ${profile?.last_name}`} />
       
       <main className="flex-1 md:ml-64">
@@ -189,7 +187,8 @@ export default function MyLeavesPage() {
           {showForm && (
             <Card className="mb-8">
               <CardHeader>
-                <CardTitle>Request New Leave</CardTitle>
+                {/* ✅ Look for this change to confirm update */}
+                <CardTitle>Request New Leave (Updated)</CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -206,10 +205,13 @@ export default function MyLeavesPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="casual">Casual Leave</SelectItem>
-                          <SelectItem value="sick">Sick Leave</SelectItem>
-                          <SelectItem value="personal">Personal Leave</SelectItem>
-                          <SelectItem value="annual">Annual Leave</SelectItem>
+                          {/* ✅ NEW OPTIONS */}
+                          <SelectItem value="PL">PL</SelectItem>
+                          <SelectItem value="Casual">Casual</SelectItem>
+                          <SelectItem value="Sick">Sick</SelectItem>
+                          <SelectItem value="Maternity">Maternity</SelectItem>
+                          <SelectItem value="Paternity">Paternity</SelectItem>
+                          <SelectItem value="Compassionate">Leave on Compassionate Grounds</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
