@@ -4,12 +4,12 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from "./ui/button";
-import { LayoutDashboard, Users, FileText, Calendar, Briefcase, LogOut, Menu, X, BarChart3, Bell, Star, Users2, CalendarPlus, CalendarCheck } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Briefcase, LogOut, Menu, X, BarChart3, Bell, Star, Users2, CalendarPlus, CalendarCheck } from 'lucide-react';
 import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
 
 interface SidebarNavProps {
-  role: "admin" | "hod" | "employee";
+  role: "super_admin" | "admin" | "hod" | "employee";
   userName?: string;
 }
 
@@ -24,6 +24,10 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
     router.push("/auth/login");
   };
 
+  // Helper to check permissions
+  const isAdminOrSuper = role === "admin" || role === "super_admin";
+  const isManagement = role === "hod" || isAdminOrSuper;
+
   const navItems = [
     {
       label: "Dashboard",
@@ -31,20 +35,19 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       icon: LayoutDashboard,
       show: true,
     },
-    // 1. REPLACED: Split into two distinct items for better control
     {
-      label: "Review Leaves", // For HOD/Admin to approve others
+      label: "Review Leaves",
       href: "/dashboard/leaves",
       icon: CalendarCheck,
-      show: role === "hod" || role === "admin",
+      show: isManagement,
     },
     {
-      label: "My Leaves", // For Employee/HOD to request their own
+      label: "My Leaves",
       href: "/dashboard/my-leaves",
       icon: CalendarPlus,
-      show: role === "employee" || role === "hod", 
+      // Everyone can request leaves
+      show: true, 
     },
-    // ------------------------------------------------------------
     {
       label: "My Team",
       href: "/dashboard/team",
@@ -55,7 +58,8 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       label: "Employees",
       href: "/dashboard/employees",
       icon: Users,
-      show: role !== "employee",
+      // Only management sees full employee list
+      show: isManagement,
     },
     {
       label: "Announcements",
@@ -67,19 +71,19 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       label: "Performance",
       href: "/dashboard/performance",
       icon: Star,
-      show: role !== "employee",
+      show: isManagement,
     },
     {
       label: "Attendance",
       href: "/dashboard/attendance",
       icon: FileText,
-      show: role !== "employee",
+      show: isManagement,
     },
     {
       label: "Reports",
       href: "/dashboard/reports",
       icon: BarChart3,
-      show: role === "admin",
+      show: isAdminOrSuper,
     },
     {
       label: "Profile",
@@ -106,7 +110,9 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       >
         <div className="p-6 border-b border-sidebar-border">
           <h1 className="text-xl font-bold text-sidebar-foreground">EMS</h1>
-          <p className="text-sm text-sidebar-foreground/60 capitalize mt-1">{role}</p>
+          <p className="text-sm text-sidebar-foreground/60 capitalize mt-1">
+            {role.replace('_', ' ')}
+          </p>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

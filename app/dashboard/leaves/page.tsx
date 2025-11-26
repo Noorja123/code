@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, CheckCircle, X, AlertCircle, History } from 'lucide-react';
+import { Calendar, CheckCircle, X, AlertCircle, History, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface Leave {
@@ -55,15 +55,13 @@ export default function LeavesPage() {
 
         setProfile(profileData);
 
-        // 1. Fetch ALL relevant leaves (not just pending)
         let query = supabase
           .from("leaves")
           .select(`*, profiles!employee_id(first_name, last_name)`);
 
         if (profileData.role === "hod") {
-          // HOD sees everything in their department
           query = query.eq("department_id", profileData.department_id);
-        } else if (profileData.role === "admin") {
+        } else if (profileData.role === "admin" || profileData.role === "super_admin") {
           // Admin sees everything
         } else {
           setLeaves([]);
@@ -91,22 +89,18 @@ export default function LeavesPage() {
     fetchData();
   }, []);
 
-  // 2. Filter Logic to separate Pending vs History
   const getFilteredLeaves = (type: 'pending' | 'history') => {
     if (!profile) return [];
 
     return leaves.filter((leave) => {
       if (profile.role === "hod") {
-        // HOD Pending: Status is 'pending'
         if (type === 'pending') return leave.status === "pending";
-        // HOD History: Anything NOT pending (approved, rejected, etc.)
         return leave.status !== "pending";
       } 
       
-      if (profile.role === "admin") {
-        // Admin Pending: Status is 'hod_approved' (waiting for admin)
+      if (profile.role === "admin" || profile.role === "super_admin") {
+        // Admin Pending: Status is 'hod_approved' (waiting for admin) OR 'pending' if HOD submitted it
         if (type === 'pending') return leave.status === "hod_approved";
-        // Admin History: Fully approved or rejected by admin
         return ["admin_approved", "admin_rejected", "hod_rejected"].includes(leave.status);
       }
 
@@ -147,9 +141,8 @@ export default function LeavesPage() {
           : "Leave request fully approved!"
       );
 
-      // 3. Update Local State: Move from Pending to History instantly
       setLeaves(current => 
-        current.map(l => l.id === selectedLeave.id ? { ...l, status: newStatus } : l)
+        current.map(l => l.id === selectedLeave.id ? { ...l, status: newStatus, [notesField]: notes } : l)
       );
       
       setSelectedLeave(null);
@@ -182,9 +175,8 @@ export default function LeavesPage() {
 
       setSuccess("Leave request rejected.");
 
-      // Update Local State
       setLeaves(current => 
-        current.map(l => l.id === selectedLeave.id ? { ...l, status: newStatus } : l)
+        current.map(l => l.id === selectedLeave.id ? { ...l, status: newStatus, [notesField]: notes } : l)
       );
 
       setSelectedLeave(null);
@@ -294,8 +286,12 @@ export default function LeavesPage() {
                         <LeaveCard 
                           key={leave.id} 
                           leave={leave} 
-                          isSelected={false} // History items generally typically read-only here
-                          onClick={() => {}} // Optional: allow clicking to see details
+                          isSelected={selectedLeave?.id === leave.id}
+                          onClick={() => {
+                            setSelectedLeave(leave);
+                            setSuccess(null);
+                            setNotes(profile.role === 'hod' ? leave.hod_notes || "" : leave.admin_notes || "");
+                          }}
                           statusColor={getStatusBadge(leave.status)}
                         />
                       ))
@@ -305,7 +301,7 @@ export default function LeavesPage() {
               </Tabs>
             </div>
 
-            {/* Review Panel - Only visible if something is selected */}
+            {/* Review Panel */}
             {selectedLeave && (
               <Card className="h-fit sticky top-4 border-primary/20 shadow-md">
                 <CardHeader>
@@ -333,6 +329,19 @@ export default function LeavesPage() {
                     <p className="text-sm text-muted-foreground">Reason</p>
                     <p className="font-medium">{selectedLeave.reason}</p>
                   </div>
+
+                  {/* ✅ NEW: Show HOD Notes for Admins */}
+                  {selectedLeave.hod_notes && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold mb-1 flex items-center gap-1">
+                        <MessageSquare size={12} />
+                        Head of Department Note
+                      </p>
+                      <p className="text-sm text-blue-800 dark:text-blue-200 italic">
+                        "{selectedLeave.hod_notes}"
+                      </p>
+                    </div>
+                  )}
                   
                   <div className="pt-4 border-t">
                     <Label htmlFor="notes">Your Decision Notes</Label>
@@ -346,21 +355,31 @@ export default function LeavesPage() {
                   </div>
                   
                   <div className="flex gap-2 flex-col pt-2">
-                    <Button
-                      onClick={handleApprove}
-                      className="bg-green-600 hover:bg-green-700 w-full"
-                    >
-                      <CheckCircle size={16} className="mr-2" />
-                      {profile.role === 'hod' ? 'Approve & Send to Admin' : 'Final Approve'}
-                    </Button>
-                    <Button
-                      onClick={handleReject}
-                      variant="destructive"
-                      className="w-full"
-                    >
-                      <X size={16} className="mr-2" />
-                      Reject
-                    </Button>
+                    {/* Only show buttons if the status allows action for this role */}
+                    {(profile.role === 'hod' && selectedLeave.status === 'pending') || 
+                     ((profile.role === 'admin' || profile.role === 'super_admin') && selectedLeave.status === 'hod_approved') ? (
+                      <>
+                        <Button
+                          onClick={handleApprove}
+                          className="bg-green-600 hover:bg-green-700 w-full"
+                        >
+                          <CheckCircle size={16} className="mr-2" />
+                          {profile.role === 'hod' ? 'Approve & Send to Admin' : 'Final Approve'}
+                        </Button>
+                        <Button
+                          onClick={handleReject}
+                          variant="destructive"
+                          className="w-full"
+                        >
+                          <X size={16} className="mr-2" />
+                          Reject
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-center text-sm text-muted-foreground italic">
+                        This request has already been processed.
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -372,7 +391,6 @@ export default function LeavesPage() {
   );
 }
 
-// Helper Component for cleaner code
 function LeaveCard({ leave, isSelected, onClick, statusColor }: any) {
   return (
     <Card
@@ -399,6 +417,12 @@ function LeaveCard({ leave, isSelected, onClick, statusColor }: any) {
               {new Date(leave.start_date).toLocaleDateString()} -{" "}
               {new Date(leave.end_date).toLocaleDateString()}
             </p>
+            {/* Show if HOD notes exist in list view too */}
+            {leave.hod_notes && (
+              <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                <MessageSquare size={12} /> Has HOD Comments
+              </p>
+            )}
           </div>
         </div>
       </CardContent>
