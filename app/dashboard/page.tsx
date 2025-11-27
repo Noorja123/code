@@ -5,16 +5,18 @@ import { DashboardHeader } from "@/components/dashboard-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, AlertTriangle } from 'lucide-react';
+import { ArrowRight, Users, Calendar, Bell, TrendingUp } from 'lucide-react';
 import type { IconKey } from "@/components/dashboard-header";
+
+// ✅ FORCE DYNAMIC: Ensures dashboard never shows stale data
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    redirect("/auth/login");
-  }
+  if (userError || !user) redirect("/auth/login");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -22,36 +24,34 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="p-6 bg-red-50 border border-red-200 rounded-lg max-w-md">
-          <h2 className="text-red-800 font-bold mb-2">Profile Not Found</h2>
-          <p className="text-red-600 text-sm mb-4">
-            Your account exists, but your employee profile is missing.
-          </p>
-          <Link href="/auth/login" className="text-blue-600 hover:underline">
-            Back to Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  if (!profile) return <div>Profile not found</div>;
 
   const role = profile.role as "admin" | "hod" | "employee" | "super_admin";
 
-  // --- 1. Fetch Real Statistics ---
+  // --- 1. STATISTICS QUERIES ---
   
-  // A. Total Employees (or Team Members for Employee)
-  let employeeQuery = supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'employee');
-  if (role === 'hod') {
-    employeeQuery = employeeQuery.eq('department_id', profile.department_id);
-  } else if (role === 'employee') {
-    employeeQuery = employeeQuery.eq('department_id', profile.department_id);
+  // A. Total Headcount (Everyone)
+  let employeeQuery = supabase.from('profiles').select('*', { count: 'exact', head: true });
+  if (role === 'hod' || role === 'employee') {
+    if (profile.department_id) {
+      employeeQuery = employeeQuery.eq('department_id', profile.department_id);
+    } else {
+      employeeQuery = employeeQuery.is('department_id', null);
+    }
   }
   const { count: employeeCount } = await employeeQuery;
 
-  // B. Pending Leaves (Context aware)
+  // B. Total HODs (Visible to Admin & Super Admin)
+  let hodCount = 0;
+  if (role === 'admin' || role === 'super_admin') {
+    const { count } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'hod');
+    hodCount = count || 0;
+  }
+
+  // C. Pending Leaves
   let leaveQuery = supabase.from('leaves').select('*', { count: 'exact', head: true });
   if (role === 'hod') {
     leaveQuery = leaveQuery.eq('department_id', profile.department_id).eq('status', 'pending');
@@ -62,47 +62,51 @@ export default async function DashboardPage() {
   }
   const { count: pendingLeaveCount } = await leaveQuery;
 
-  // C. Announcements
+  // D. Announcements
   const { count: announcementCount } = await supabase
     .from('announcements')
     .select('*', { count: 'exact', head: true });
 
-  // D. Performance Average
+  // E. Performance
   let perfQuery = supabase.from('performance_reviews').select('rating');
-  if (role === 'employee') {
-    perfQuery = perfQuery.eq('employee_id', user.id);
-  }
+  if (role === 'employee') perfQuery = perfQuery.eq('employee_id', user.id);
   const { data: reviews } = await perfQuery;
   
   const avgRating = reviews && reviews.length > 0
     ? (reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length).toFixed(1)
     : "0.0";
 
-
-  // --- 2. Construct Stats Objects (Using STRINGS for icons now) ---
+  // --- 2. Stats Array ---
   const stats = [
     {
-      label: role === 'employee' ? "My Team Members" : "Total Employees",
+      label: role === 'employee' ? "My Team" : "Total Headcount",
       value: employeeCount || 0,
-      icon: "users" as IconKey, // Passed as string
+      icon: "users" as IconKey,
       color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
     },
+    // ✅ Show HOD Count for Admin/Super Admin
+    ...((role === 'admin' || role === 'super_admin') ? [{
+      label: "Total HODs",
+      value: hodCount,
+      icon: "briefcase" as IconKey,
+      color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
+    }] : []),
     {
       label: role === 'employee' ? "My Pending Requests" : "Pending Reviews",
       value: pendingLeaveCount || 0,
-      icon: "calendar" as IconKey, // Passed as string
+      icon: "calendar" as IconKey,
       color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
     },
     {
       label: "Announcements",
       value: announcementCount || 0,
-      icon: "bell" as IconKey, // Passed as string
+      icon: "bell" as IconKey,
       color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
     },
     {
       label: "Avg Performance",
       value: avgRating,
-      icon: "trending" as IconKey, // Passed as string
+      icon: "trending" as IconKey,
       color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
     },
   ];
@@ -113,6 +117,15 @@ export default async function DashboardPage() {
       
       <main className="flex-1 md:ml-64">
         <div className="p-4 md:p-8">
+          
+          {/* --- DEBUG BOX ---
+          <div className="mb-6 p-4 bg-slate-100 border border-slate-300 rounded-md text-xs font-mono text-slate-700">
+            <p><strong>DEBUG INFO:</strong></p>
+            <p>Your Role: {role}</p>
+            <p>Headcount: {employeeCount} (Should be ALL for Super Admin)</p>
+          </div> */}
+          {/* ----------------- */}
+
           <div className="mb-8">
             <h1 className="text-3xl font-bold">Welcome back, {profile.first_name}!</h1>
             <p className="text-muted-foreground mt-2">
@@ -122,6 +135,7 @@ export default async function DashboardPage() {
 
           <DashboardHeader role={role} stats={stats} />
 
+          {/* Quick Actions & Profile Summary */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -136,7 +150,7 @@ export default async function DashboardPage() {
                     </Button>
                   </Link>
                 )}
-                {role !== "employee" && (
+                {(role === "admin" || role === "super_admin" || role === "hod") && (
                   <>
                     <Link href="/dashboard/leaves">
                       <Button variant="outline" className="w-full justify-between">
