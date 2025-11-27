@@ -104,7 +104,6 @@ export default function EmployeesPage() {
   }, []);
 
   const handleRoleChange = async (employeeId: string, newRole: string) => {
-    // Client-side check for role change
     if (profile.role !== 'super_admin') {
       setError("Only Super Admins can change roles.");
       return;
@@ -128,7 +127,7 @@ export default function EmployeesPage() {
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError("Failed to update role. You may not have permission.");
+      setError("Failed to update role");
     }
   };
 
@@ -293,24 +292,32 @@ export default function EmployeesPage() {
                           </h3>
                           
                           <div className="flex items-center gap-2">
-                            {/* Role Dropdown: Super Admin Only (Disabled for others) */}
-                            <Select 
-                              defaultValue={emp.role} 
-                              onValueChange={(val) => handleRoleChange(emp.id, val)}
-                              disabled={profile?.role !== 'super_admin' || emp.id === profile.id}
-                            >
-                              <SelectTrigger className="w-[120px] h-7 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="employee">Employee</SelectItem>
-                                <SelectItem value="hod">HOD</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                                <SelectItem value="super_admin">Super Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            {/* LOGIC UPDATE:
+                                - SUPER ADMIN sees the Dropdown
+                                - ADMIN / HOD sees the clean Badge (No gray dropdown)
+                            */}
+                            {profile?.role === 'super_admin' && emp.id !== profile.id ? (
+                              <Select 
+                                defaultValue={emp.role} 
+                                onValueChange={(val) => handleRoleChange(emp.id, val)}
+                              >
+                                <SelectTrigger className="w-[120px] h-7 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="employee">Employee</SelectItem>
+                                  <SelectItem value="hod">HOD</SelectItem>
+                                  <SelectItem value="admin">Admin</SelectItem>
+                                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge className={getRoleBadge(emp.role)}>
+                                {emp.role.replace('_', ' ')}
+                              </Badge>
+                            )}
 
-                            {/* Password Reset: SUPER ADMIN ONLY */}
+                            {/* Password Reset: Only if Super Admin */}
                             {profile?.role === 'super_admin' && emp.id !== profile.id && (
                               <Button 
                                 variant="outline" 
