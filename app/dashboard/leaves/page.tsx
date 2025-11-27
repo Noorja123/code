@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, CheckCircle, X, AlertCircle, History, MessageSquare } from 'lucide-react';
+import { Calendar, CheckCircle, X, AlertCircle, History, MessageSquare, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface Leave {
@@ -24,6 +24,7 @@ interface Leave {
   hod_notes?: string;
   admin_notes?: string;
   employee_name?: string;
+  employee_role?: string; // ✅ NEW FIELD
   created_at: string;
 }
 
@@ -55,9 +56,10 @@ export default function LeavesPage() {
 
         setProfile(profileData);
 
+        // ✅ UPDATE: Fetch 'role' along with names
         let query = supabase
           .from("leaves")
-          .select(`*, profiles!employee_id(first_name, last_name)`);
+          .select(`*, profiles!employee_id(first_name, last_name, role)`);
 
         if (profileData.role === "hod") {
           query = query.eq("department_id", profileData.department_id);
@@ -76,6 +78,7 @@ export default function LeavesPage() {
         const formattedLeaves = (leavesData || []).map((leave: any) => ({
           ...leave,
           employee_name: `${leave.profiles?.first_name} ${leave.profiles?.last_name}`,
+          employee_role: leave.profiles?.role, // ✅ Store the role
         }));
 
         setLeaves(formattedLeaves);
@@ -99,7 +102,6 @@ export default function LeavesPage() {
       } 
       
       if (profile.role === "admin" || profile.role === "super_admin") {
-        // Admin Pending: Status is 'hod_approved' (waiting for admin) OR 'pending' if HOD submitted it
         if (type === 'pending') return leave.status === "hod_approved";
         return ["admin_approved", "admin_rejected", "hod_rejected"].includes(leave.status);
       }
@@ -197,6 +199,16 @@ export default function LeavesPage() {
     return variants[status] || variants.pending;
   };
 
+  // Helper for role badges
+  const getRoleBadgeColor = (role?: string) => {
+    switch (role) {
+      case 'admin': return "bg-red-100 text-red-800 border-red-200";
+      case 'hod': return "bg-purple-100 text-purple-800 border-purple-200";
+      case 'super_admin': return "bg-slate-800 text-white border-slate-900";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen bg-background">
@@ -266,6 +278,7 @@ export default function LeavesPage() {
                             setNotes("");
                           }}
                           statusColor={getStatusBadge(leave.status)}
+                          roleBadgeColor={getRoleBadgeColor(leave.employee_role)}
                         />
                       ))
                     )}
@@ -293,6 +306,7 @@ export default function LeavesPage() {
                             setNotes(profile.role === 'hod' ? leave.hod_notes || "" : leave.admin_notes || "");
                           }}
                           statusColor={getStatusBadge(leave.status)}
+                          roleBadgeColor={getRoleBadgeColor(leave.employee_role)}
                         />
                       ))
                     )}
@@ -309,9 +323,17 @@ export default function LeavesPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Employee</p>
-                    <p className="font-semibold">{selectedLeave.employee_name}</p>
+                    {/* ✅ UPDATED LABEL: Requester (Instead of Employee) */}
+                    <p className="text-sm text-muted-foreground mb-1">Requester</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-lg">{selectedLeave.employee_name}</p>
+                      {/* ✅ ROLE BADGE */}
+                      <Badge variant="outline" className={getRoleBadgeColor(selectedLeave.employee_role)}>
+                        {selectedLeave.employee_role?.replace('_', ' ').toUpperCase()}
+                      </Badge>
+                    </div>
                   </div>
+                  
                   <div>
                     <p className="text-sm text-muted-foreground">Type</p>
                     <p className="font-semibold capitalize">
@@ -330,7 +352,6 @@ export default function LeavesPage() {
                     <p className="font-medium">{selectedLeave.reason}</p>
                   </div>
 
-                  {/* ✅ NEW: Show HOD Notes for Admins */}
                   {selectedLeave.hod_notes && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800">
                       <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold mb-1 flex items-center gap-1">
@@ -355,7 +376,6 @@ export default function LeavesPage() {
                   </div>
                   
                   <div className="flex gap-2 flex-col pt-2">
-                    {/* Only show buttons if the status allows action for this role */}
                     {(profile.role === 'hod' && selectedLeave.status === 'pending') || 
                      ((profile.role === 'admin' || profile.role === 'super_admin') && selectedLeave.status === 'hod_approved') ? (
                       <>
@@ -391,7 +411,7 @@ export default function LeavesPage() {
   );
 }
 
-function LeaveCard({ leave, isSelected, onClick, statusColor }: any) {
+function LeaveCard({ leave, isSelected, onClick, statusColor, roleBadgeColor }: any) {
   return (
     <Card
       className={`cursor-pointer transition hover:bg-accent/50 ${
@@ -402,10 +422,14 @@ function LeaveCard({ leave, isSelected, onClick, statusColor }: any) {
       <CardContent className="pt-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <h3 className="font-semibold">
                 {leave.employee_name}
               </h3>
+              {/* ✅ List View Role Badge */}
+              <Badge variant="secondary" className={`text-[10px] h-5 px-1.5 ${roleBadgeColor}`}>
+                {leave.employee_role?.replace('_', ' ').toUpperCase()}
+              </Badge>
               <Badge className={statusColor}>
                 {leave.status.replace(/_/g, " ")}
               </Badge>
@@ -417,7 +441,6 @@ function LeaveCard({ leave, isSelected, onClick, statusColor }: any) {
               {new Date(leave.start_date).toLocaleDateString()} -{" "}
               {new Date(leave.end_date).toLocaleDateString()}
             </p>
-            {/* Show if HOD notes exist in list view too */}
             {leave.hod_notes && (
               <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                 <MessageSquare size={12} /> Has HOD Comments

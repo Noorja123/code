@@ -59,8 +59,11 @@ export default function ReportsPage() {
           .eq("id", user.id)
           .single();
 
-        if (profileData.role !== "admin") {
-          router.push("/dashboard");
+        // ✅ FIX: Allow Super Admin access
+        if (profileData.role !== "admin" && profileData.role !== "super_admin") {
+          // Instead of redirecting immediately, we just stop loading
+          // The UI below handles the "No Permission" message
+          setLoading(false);
           return;
         }
 
@@ -99,7 +102,7 @@ export default function ReportsPage() {
           (emp: any) => emp.role === "employee"
         ).length || 0;
 
-        const avgAttendanceRate = attendanceData
+        const avgAttendanceRate = attendanceData && attendanceData.length > 0
           ? (attendanceData.filter(
               (rec: any) => rec.status === "present"
             ).length / Math.max(attendanceData.length, 1)) *
@@ -161,7 +164,7 @@ export default function ReportsPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen bg-background">
-        <SidebarNav role="admin" />
+        <SidebarNav role={profile?.role || "admin"} />
         <main className="flex-1 md:ml-64 p-8">
           <p className="text-muted-foreground">Loading...</p>
         </main>
@@ -169,15 +172,17 @@ export default function ReportsPage() {
     );
   }
 
-  if (!profile || profile.role !== "admin") {
+  // ✅ FIX: Update Permission Check in UI
+  if (!profile || (profile.role !== "admin" && profile.role !== "super_admin")) {
     return (
       <div className="flex min-h-screen bg-background">
+        {/* Pass "admin" as fallback role just to render sidebar */}
         <SidebarNav role="admin" />
         <main className="flex-1 md:ml-64 p-8">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              You don't have permission to view this page
+              You don't have permission to view this page.
             </AlertDescription>
           </Alert>
         </main>
@@ -187,7 +192,7 @@ export default function ReportsPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <SidebarNav role="admin" userName={`${profile?.first_name} ${profile?.last_name}`} />
+      <SidebarNav role={profile.role} userName={`${profile?.first_name} ${profile?.last_name}`} />
       
       <main className="flex-1 md:ml-64">
         <div className="p-4 md:p-8">

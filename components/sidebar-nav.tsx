@@ -45,8 +45,8 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       label: "My Leaves",
       href: "/dashboard/my-leaves",
       icon: CalendarPlus,
-      // Everyone can request leaves
-      show: true, 
+      // ✅ CHANGED: Hide this for Super Admin, show for everyone else
+      show: role !== "super_admin", 
     },
     {
       label: "My Team",
@@ -58,7 +58,6 @@ export function SidebarNav({ role, userName }: SidebarNavProps) {
       label: "Employees",
       href: "/dashboard/employees",
       icon: Users,
-      // Only management sees full employee list
       show: isManagement,
     },
     {
