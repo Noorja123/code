@@ -57,7 +57,7 @@ export default function EmployeesPage() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [newPassword, setNewPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false); // Toggle state
+  const [showPassword, setShowPassword] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const router = useRouter();
@@ -104,6 +104,11 @@ export default function EmployeesPage() {
   }, []);
 
   const handleRoleChange = async (employeeId: string, newRole: string) => {
+    if (profile.role !== 'super_admin') {
+      setError("Only Super Admins can change roles.");
+      return;
+    }
+
     setError(null);
     setSuccess(null);
     try {
@@ -129,7 +134,7 @@ export default function EmployeesPage() {
   const openPasswordDialog = (employee: Employee) => {
     setSelectedEmployee(employee);
     setNewPassword("");
-    setShowPassword(false); // Reset visibility
+    setShowPassword(false);
     setPasswordDialogOpen(true);
   };
 
@@ -287,13 +292,16 @@ export default function EmployeesPage() {
                           </h3>
                           
                           <div className="flex items-center gap-2">
-                            {/* Role Changer: Super Admin Only */}
+                            {/* ✅ LOGIC: 
+                                - IF Super Admin (and not self): Show Dropdown 
+                                - ELSE: Show Read-only Badge
+                            */}
                             {profile?.role === 'super_admin' && emp.id !== profile.id ? (
                               <Select 
                                 defaultValue={emp.role} 
                                 onValueChange={(val) => handleRoleChange(emp.id, val)}
                               >
-                                <SelectTrigger className="w-[120px] h-7 text-xs">
+                                <SelectTrigger className="w-[130px] h-7 text-xs">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -309,7 +317,7 @@ export default function EmployeesPage() {
                               </Badge>
                             )}
 
-                            {/* Password Reset: Super Admin, Admin, HOD */}
+                            {/* Reset Password Button (Visible if allowed) */}
                             {emp.id !== profile.id && (
                               <Button 
                                 variant="outline" 
@@ -341,7 +349,7 @@ export default function EmployeesPage() {
             )}
           </div>
 
-          {/* Password Change Dialog */}
+          {/* Password Dialog */}
           <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
             <DialogContent>
               <DialogHeader>
