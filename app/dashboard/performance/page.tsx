@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -16,8 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Star, Plus, AlertCircle, CheckCircle } from 'lucide-react';
+import { Star, Plus, CheckCircle, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface Review {
@@ -70,22 +68,25 @@ export default function PerformancePage() {
 
         setProfile(profileData);
 
-        // Fetch employees
+        // --- 1. Fetch Employees List (For the Dropdown) ---
         let empQuery = supabase.from("profiles").select("id, first_name, last_name");
         
         if (profileData.role === "hod") {
+          // HODs see only their department
           empQuery = empQuery
             .eq("department_id", profileData.department_id)
             .eq("role", "employee");
-        } else if (profileData.role !== "admin") {
-          router.push("/dashboard");
-          return;
+        } else if (profileData.role === "admin" || profileData.role === "super_admin") {
+          // Admins/Super Admins see everyone (except maybe themselves, optional)
+          empQuery = empQuery.neq("id", user.id); 
+        } else {
+          // Regular employees don't need this list (they can't review)
         }
 
         const { data: empData } = await empQuery;
         setEmployees(empData || []);
 
-        // Fetch reviews
+        // --- 2. Fetch Reviews List ---
         let reviewQuery = supabase
           .from("performance_reviews")
           .select(
@@ -95,12 +96,19 @@ export default function PerformancePage() {
           );
 
         if (profileData.role === "hod") {
+          // HODs see reviews they wrote OR reviews about their department employees (optional, here sticking to reviews they wrote)
           reviewQuery = reviewQuery.eq("reviewer_id", user.id);
+        } else if (profileData.role === "employee") {
+          // Employees see reviews about themselves
+          reviewQuery = reviewQuery.eq("employee_id", user.id);
         }
+        // Admins/Super Admins see ALL reviews automatically
 
-        const { data: reviewData } = await reviewQuery.order("review_date", {
+        const { data: reviewData, error: reviewError } = await reviewQuery.order("review_date", {
           ascending: false,
         });
+
+        if (reviewError) throw reviewError;
 
         const formatted = (reviewData || []).map((review: any) => ({
           ...review,
@@ -110,6 +118,7 @@ export default function PerformancePage() {
 
         setReviews(formatted);
       } catch (err) {
+        console.error(err);
         setError("Failed to load performance data");
       } finally {
         setLoading(false);
@@ -149,31 +158,11 @@ export default function PerformancePage() {
       setFormData({ employee_id: "", rating: "5", feedback: "" });
       setShowForm(false);
 
-      // Refresh reviews
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      let reviewQuery = supabase
-        .from("performance_reviews")
-        .select(
-          `*, 
-           employee:profiles!employee_id(first_name, last_name),
-           reviewer:profiles!reviewer_id(first_name, last_name)`
-        );
+      // Refresh reviews list
+      // Note: In a real app we'd refetch, here we force a reload or re-run the fetch logic.
+      // For simplicity, let's reload the page content logic:
+      window.location.reload(); 
 
-      if (profile.role === "hod") {
-        reviewQuery = reviewQuery.eq("reviewer_id", currentUser?.id);
-      }
-
-      const { data: reviewData } = await reviewQuery.order("review_date", {
-        ascending: false,
-      });
-
-      const formatted = (reviewData || []).map((review: any) => ({
-        ...review,
-        employee_name: `${review.employee?.first_name} ${review.employee?.last_name}`,
-        reviewer_name: `${review.reviewer?.first_name} ${review.reviewer?.last_name}`,
-      }));
-
-      setReviews(formatted);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit review");
     }
@@ -208,6 +197,9 @@ export default function PerformancePage() {
     );
   }
 
+  // Check if user is allowed to add reviews
+  const canAddReview = ['hod', 'admin', 'super_admin'].includes(profile?.role);
+
   return (
     <div className="flex min-h-screen bg-background">
       <SidebarNav role={profile?.role} userName={`${profile?.first_name} ${profile?.last_name}`} />
@@ -221,7 +213,7 @@ export default function PerformancePage() {
                 Manage employee performance reviews and ratings
               </p>
             </div>
-            {(profile?.role === "hod" || profile?.role === "admin") && (
+            {canAddReview && (
               <Button onClick={() => setShowForm(!showForm)}>
                 <Plus size={16} className="mr-2" />
                 Add Review
@@ -245,8 +237,8 @@ export default function PerformancePage() {
             </Alert>
           )}
 
-          {showForm && (
-            <Card className="mb-8">
+          {showForm && canAddReview && (
+            <Card className="mb-8 border-2 border-primary/10">
               <CardHeader>
                 <CardTitle>Add Performance Review</CardTitle>
               </CardHeader>
@@ -337,19 +329,19 @@ export default function PerformancePage() {
                   <CardContent className="pt-6">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h3 className="font-semibold">{review.employee_name}</h3>
+                        <h3 className="font-semibold text-lg">{review.employee_name}</h3>
                         <p className="text-sm text-muted-foreground">
-                          Reviewed by {review.reviewer_name}
+                          Reviewed by <span className="font-medium text-foreground">{review.reviewer_name}</span>
                         </p>
                       </div>
                       <div className="text-right">
                         {renderStars(review.rating)}
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           {new Date(review.review_date).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
-                    <p className="text-foreground">{review.feedback}</p>
+                    <p className="text-foreground leading-relaxed">{review.feedback}</p>
                   </CardContent>
                 </Card>
               ))
